@@ -26,6 +26,22 @@
             padding: 5px;
             font-size: 16px;
         }
+        .leaflet-tooltip-top:before, 
+        .leaflet-tooltip-bottom:before, 
+        .leaflet-tooltip-left:before, 
+        .leaflet-tooltip-right:before {
+            border: none !important;
+        }
+        .popup {
+            background: rgba(0, 0, 0, 0) !important;
+            border: none !important;
+            font-size: 12px;
+            font-weight: 800;
+            color: #00acca;
+            box-shadow: none !important;
+        }
+
+
     </style>
 </head>
 <body>
@@ -45,11 +61,16 @@
         // Add Esri World Gray Canvas basemap
         var Esri_WorldGrayCanvas = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
             attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
-            maxZoom: 10
+            maxZoom: 8,
+            minZoom: 4
         });
 
         // Add the basemap to the map
         Esri_WorldGrayCanvas.addTo(map);
+
+        map.on('zoomend', function(evt) {
+            hideOverlappingTooltips();
+        });
 
         var currentDestinationMarkers = [];
         var currentLines = [];
@@ -67,13 +88,11 @@
             return L.marker([lat, lon], {
                 icon: L.divIcon({
                     className: 'custom-square-marker',
-                    html: `<div style="width: 12px; height: 12px; background-color: ${options.fillColor}; border: 2px solid ${options.color};"></div>`
+                    html: `<div style="width: 18px; height: 18px; background-color: ${options.fillColor}; border: 2px solid ${options.color};"></div>`
                 })
             }).addTo(map);
         }
 
-
-        
         // Function to clear existing destination markers and lines
         function clearDestinationMarkers() {
             currentDestinationMarkers.forEach(marker => map.removeLayer(marker));
@@ -97,14 +116,21 @@
                     fillColor: '#A7A9AC',
                     fillOpacity: 1,
                     radius: 8
-                }).bindPopup(`<b>Origin:</b> ${origin.name}`);
+                }).bindTooltip(`${origin.name}`,{permanent:true, direction: 'bottom', className: 'popup'}).openTooltip();
+
+                hideOverlappingTooltips();
+
+                originMarker.on('click', function() {
+                    var originselector = document.getElementById('originSelect');
+                    originselector.value = origin.name;
+                    updateMarkersForSelectedOrigin(origin.name);
+                });
 
                 originMarkers.push({
                     marker: originMarker,
                     destinations: destinations,
                     transit: transit
                 });
-
 
                 // Add origin to the dropdown menu
                 var option = document.createElement('option');
@@ -115,10 +141,10 @@
         }
 
         // Function to update destination markers and lines based on selected origin
-        function updateDestinationMarkers(originName) {
+        function updateMarkersForSelectedOrigin(originName) {
             clearDestinationMarkers();
             originMarkers.forEach(item => {
-                if (item.marker.getPopup().getContent().includes(`<b>Origin:</b> ${originName}`)) {
+                if (item.marker.getTooltip().getContent().includes(`${originName}`)) {
                     item.marker.setStyle({
                         color: '#FFFFFF', // White stroke
                         fillColor: '#00acca', // Origin fill color
@@ -126,61 +152,72 @@
                         radius: 12
                     });
 
-                    if(item.transit.name == "No Transit"){
-                        console.log("Coming Here");
+                    if (item.transit.name === "No Transit") {
                         item.destinations.forEach(destination => {
                             var destinationMarker = createCircleMarker(destination.lat, destination.lon, {
                                 color: '#FFFFFF', // White stroke
                                 fillColor: '#81b43f', // Destination fill color
                                 radius: 8,
                                 fillOpacity: 1,
-                            }).bindPopup(`<b>Destination:</b> ${destination.name}`);
+                            });
 
                             currentDestinationMarkers.push(destinationMarker);
 
-                            // Draw straight lines between origin, transit, and destination
+                            // Draw straight lines between origin and destination
                             var line1 = L.polyline([[item.marker.getLatLng().lat, item.marker.getLatLng().lng], [destination.lat, destination.lon]], {
                                 color: '#81b43f', // Destination color
                                 weight: 2
                             }).addTo(map);
                             currentLines.push(line1);
+
+                            destinationMarker.on('click', function() {
+                                console.log(destination.name);
+                                updateMarkersForSelectedOrigin(destination.name);
+                            });
                         });
-                    }
-                    
-                    else {
+                    } else {
+                        // Create transit marker
+                        var transitMarker = createSquareMarker(item.transit.lat, item.transit.lon, {
+                            color: '#FFFFFF', // White stroke
+                            fillColor: '#00acca'
+                        });
 
-                    // Create transit marker
-                    var transitMarker = createSquareMarker(item.transit.lat, item.transit.lon, {
-                        color: '#FFFFFF', // Pantone 877C
-                        fillColor: '#00acca'
-                    }).bindPopup(`<b>Transit:</b> ${item.transit.name}`);
-
-                    transitMarkers.push(transitMarker);
+                        transitMarkers.push(transitMarker);
 
                         item.destinations.forEach(destination => {
-                        var destinationMarker = createCircleMarker(destination.lat, destination.lon, {
-                            color: '#FFFFFF', // White stroke
-                            fillColor: '#81b43f', // Destination fill color
-                            radius: 8,
-                            fillOpacity: 1,
-                        }).bindPopup(`<b>Destination:</b> ${destination.name}`);
+                            var destinationMarker = createCircleMarker(destination.lat, destination.lon, {
+                                color: '#FFFFFF', // White stroke
+                                fillColor: '#81b43f', // Destination fill color
+                                radius: 8,
+                                fillOpacity: 1,
+                            });
 
-                        currentDestinationMarkers.push(destinationMarker);
+                            currentDestinationMarkers.push(destinationMarker);
 
-                        // Draw straight lines between origin, transit, and destination
-                        var line1 = L.polyline([[item.marker.getLatLng().lat, item.marker.getLatLng().lng], [item.transit.lat, item.transit.lon]], {
-                            color: '#81b43f', // Destination color
-                            weight: 2
-                        }).addTo(map);
-                        currentLines.push(line1);
+                            // Draw straight lines between origin, transit, and destination
+                            var line1 = L.polyline([[item.marker.getLatLng().lat, item.marker.getLatLng().lng], [item.transit.lat, item.transit.lon]], {
+                                color: '#81b43f', // Destination color
+                                weight: 2
+                            }).addTo(map);
+                            currentLines.push(line1);
 
-                        var line2 = L.polyline([[item.transit.lat, item.transit.lon], [destination.lat, destination.lon]], {
-                            color: '#81b43f', // Destination color
-                            weight: 2
-                        }).addTo(map);
-                        currentLines.push(line2);
+                            var line2 = L.polyline([[item.transit.lat, item.transit.lon], [destination.lat, destination.lon]], {
+                                color: '#81b43f', // Destination color
+                                weight: 2
+                            }).addTo(map);
+                            currentLines.push(line2);
+
+                            destinationMarker.on('click', function() {
+                                console.log(destination.name);
+                                updateMarkersForSelectedOrigin(destination.name);
+                            });
+
+                            transitMarker.on('click', function() {
+                                console.log(destination.name);
+                                updateMarkersForSelectedOrigin(destination.name);
+                            });
+
                         });
-
                     }
                 } else {
                     item.marker.setStyle({
@@ -197,7 +234,7 @@
         document.getElementById('originSelect').addEventListener('change', function() {
             var selectedOrigin = this.value;
             if (selectedOrigin) {
-                updateDestinationMarkers(selectedOrigin);
+                updateMarkersForSelectedOrigin(selectedOrigin);
             } else {
                 clearDestinationMarkers();
                 originMarkers.forEach(item => {
@@ -210,6 +247,31 @@
                 });
             }
         });
+
+        function overlap(rect1, rect2) {
+        return(!(rect1.right < rect2.left || 
+                rect1.left > rect2.right || 
+                rect1.bottom < rect2.top || 
+                rect1.top > rect2.bottom));
+        }
+
+        function hideOverlappingTooltips() {
+            var rects = [];
+            var tooltips = document.getElementsByClassName('popup');
+            for (var i = 0; i < tooltips.length; i++) {
+                tooltips[i].style.visibility = '';
+                rects[i] = tooltips[i].getBoundingClientRect();
+            }
+            for (var i = 0; i < tooltips.length; i++) {
+                if (tooltips[i].style.visibility != 'hidden') {
+                for (var j = i + 1; j < tooltips.length; j++) {
+                    if (overlap(rects[i], rects[j])) tooltips[j].style.visibility = 'hidden';
+                }
+                }
+            }
+        }
+
+
 
         // Fetch JSON data and add markers to the map
         fetch('output.json')
